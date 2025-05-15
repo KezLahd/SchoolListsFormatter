@@ -31,7 +31,9 @@ DEFAULT_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
 class SchoolMetadata(BaseModel):
     school_type: str = Field(..., description="Type of school (primary, secondary, or k-12)")
-    admin_name: Optional[str] = Field(None, description="Admin's full name")
+    admin_lastname: Optional[str] = Field(None, description="Admin's last name")
+    admin_firstname: Optional[str] = Field(None, description="Admin's first name")
+    admin_title: Optional[str] = Field(None, description="Admin's title")
     admin_email: Optional[str] = Field(None, description="Admin's email address")
     folder_id: Optional[str] = Field(None, description="Google Drive folder ID for the school")
 
