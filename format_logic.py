@@ -11,6 +11,53 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 model = genai.GenerativeModel('models/gemini-2.0-flash')
 
+def is_subscription_template(sheet_data: List[List[Any]]) -> bool:
+    meta_keywords = ["School Name", "Contact Person"]
+    header_keywords = ["Student Last Name", "1st Teacher", "2nd Teacher"]
+    found_meta = any(any(meta in str(cell) for cell in row) for meta in meta_keywords for row in sheet_data[:5])
+    found_header = any(any(header in str(cell) for cell in row) for header in header_keywords for row in sheet_data)
+    return found_meta and found_header
+
+def process_subscription_template(sheet_data: List[List[Any]]) -> Dict[str, List[List[str]]]:
+    # Find the header row index
+    header_row_index = None
+    for i, row in enumerate(sheet_data):
+        if "Student Last Name" in row:
+            header_row_index = i
+            break
+    if header_row_index is None:
+        return {"headers": [], "rows": []}
+
+    headers = [
+        "Last Name", "First Name", "Class", "Year", "Teacher Last", "Teacher First",
+        "Teacher Title", "", "", "Teacher Email", "Second Class", "Second Teacher Last",
+        "Second Teacher First", "Second Teacher Title", "Second Teacher Email"
+    ]
+
+    formatted_rows = []
+    for row in sheet_data[header_row_index + 1:]:
+        if not any(cell for cell in row):
+            continue
+        formatted_row = [
+            row[0] if len(row) > 0 else "",
+            row[1] if len(row) > 1 else "",
+            row[2] if len(row) > 2 else "",
+            row[3] if len(row) > 3 else "",
+            row[4] if len(row) > 4 else "",
+            row[5] if len(row) > 5 else "",
+            row[6] if len(row) > 6 else "",
+            "", "",  # Empty columns
+            row[7] if len(row) > 7 else "",
+            "",  # Second Class (not present in this template)
+            row[8] if len(row) > 8 else "",
+            row[9] if len(row) > 9 else "",
+            row[10] if len(row) > 10 else "",
+            row[11] if len(row) > 11 else "",
+        ]
+        formatted_rows.append(formatted_row)
+
+    return {"headers": headers, "rows": formatted_rows}
+
 def clean_text(text: str) -> str:
     """Clean text by removing special characters and normalizing."""
     # Remove special characters and normalize Māori characters
@@ -60,16 +107,8 @@ def determine_year_group(class_name: str, school_type: str) -> str:
     return defaults.get(school_type.lower(), "")
 
 def format_sheet_data(sheet_data: List[List[Any]], metadata: Optional[Dict] = None) -> Dict[str, List[List[str]]]:
-    """
-    Format sheet data into standardized structure with student and teacher information.
-    
-    Args:
-        sheet_data: 2D list of rows from Google Sheets
-        metadata: Optional metadata from n8n containing school type and admin info
-        
-    Returns:
-        Dict containing headers and formatted rows
-    """
+    if is_subscription_template(sheet_data):
+        return process_subscription_template(sheet_data)
     # Convert sheet data to string for Gemini analysis
     sheet_str = "\n".join(["\t".join(str(cell) for cell in row) for row in sheet_data])
     
@@ -89,7 +128,9 @@ def format_sheet_data(sheet_data: List[List[Any]], metadata: Optional[Dict] = No
        - Only match if classes are within 1 year of each other
     4. Use metadata for missing teacher info:
        School Type: {metadata.get('school_type', '') if metadata else ''}
-       Admin Name: {metadata.get('admin_name', '') if metadata else ''}
+       Admin Last Name: {metadata.get('admin_lastname', '') if metadata else ''}
+       Admin First Name: {metadata.get('admin_firstname', '') if metadata else ''}
+       Admin Title: {metadata.get('admin_title', '') if metadata else ''}
        Admin Email: {metadata.get('admin_email', '') if metadata else ''}
     
     Spreadsheet data:
