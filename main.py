@@ -35,9 +35,9 @@ class SchoolMetadata(BaseModel):
     admin_firstname: Optional[str] = Field(None, description="Admin's first name")
     admin_title: Optional[str] = Field(None, description="Admin's title")
     admin_email: Optional[str] = Field(None, description="Admin's email address")
-    folder_id: Optional[str] = Field(None, description="Google Drive folder ID for the school")
 
 class FormatRequest(BaseModel):
+    folder_id: Optional[str] = Field(None, description="Google Drive folder ID for the new spreadsheet")
     file_id: str = Field(..., description="Google Sheet file ID")
     metadata: SchoolMetadata = Field(..., description="School metadata from n8n")
 
@@ -89,18 +89,20 @@ def get_sheet_data(file_id: str) -> List[List[Any]]:
             detail=f"Error fetching sheet data: {str(e)}"
         )
 
-def create_new_spreadsheet_with_data(formatted_data: Dict[str, List[List[str]]], title: str = "Agent Output") -> str:
+def create_new_spreadsheet_with_data(formatted_data: Dict[str, List[List[str]]], title: str = "Agent Output", folder_id: Optional[str] = None) -> str:
     service = get_google_service(
         'sheets',
         'v4',
         ['https://www.googleapis.com/auth/spreadsheets']
     )
-    # Create the new spreadsheet
+    # Prepare the create request
     spreadsheet = {
         'properties': {
             'title': title
         }
     }
+    if folder_id:
+        spreadsheet['parents'] = [folder_id]
     spreadsheet = service.spreadsheets().create(body=spreadsheet, fields='spreadsheetId').execute()
     new_spreadsheet_id = spreadsheet.get('spreadsheetId')
     # Prepare the data: headers + rows
@@ -163,7 +165,7 @@ async def format_sheet(request: FormatRequest, background_tasks: BackgroundTasks
     """
     try:
         # Verify file access
-        folder_id = request.metadata.folder_id or DEFAULT_FOLDER_ID
+        folder_id = request.folder_id or DEFAULT_FOLDER_ID
         if not verify_file_access(request.file_id, folder_id):
             raise HTTPException(
                 status_code=403,
@@ -191,7 +193,7 @@ async def format_sheet(request: FormatRequest, background_tasks: BackgroundTasks
                 
                 # Format the data
                 formatted_data = format_sheet_data(sheet_data, request.metadata.dict())
-                new_sheet_id = create_new_spreadsheet_with_data(formatted_data, title="Agent Output")
+                new_sheet_id = create_new_spreadsheet_with_data(formatted_data, title="Agent Output", folder_id=folder_id)
                 new_sheet_url = f"https://docs.google.com/spreadsheets/d/{new_sheet_id}/edit"
                 
                 # Update result
