@@ -114,6 +114,22 @@ def create_new_spreadsheet_with_data(formatted_data: Dict[str, List[List[str]]],
     ).execute()
     return new_spreadsheet_id
 
+def share_file_with_anyone(file_id: str, role: str = "writer"):
+    drive_service = get_google_service(
+        'drive',
+        'v3',
+        ['https://www.googleapis.com/auth/drive']
+    )
+    permission = {
+        'type': 'anyone',
+        'role': role
+    }
+    drive_service.permissions().create(
+        fileId=file_id,
+        body=permission,
+        fields='id'
+    ).execute()
+
 def move_file_to_folder(file_id: str, folder_id: str):
     drive_service = get_google_service(
         'drive',
@@ -209,8 +225,7 @@ async def format_sheet(request: FormatRequest, background_tasks: BackgroundTasks
                 # Format the data
                 formatted_data = format_sheet_data(sheet_data, request.metadata.dict())
                 new_sheet_id = create_new_spreadsheet_with_data(formatted_data, title="Agent Output")
-                if folder_id:
-                    move_file_to_folder(new_sheet_id, folder_id)
+                share_file_with_anyone(new_sheet_id, role="writer")
                 new_sheet_url = f"https://docs.google.com/spreadsheets/d/{new_sheet_id}/edit"
                 
                 # Update result
