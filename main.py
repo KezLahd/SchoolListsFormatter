@@ -89,6 +89,31 @@ def get_sheet_data(file_id: str) -> List[List[Any]]:
             detail=f"Error fetching sheet data: {str(e)}"
         )
 
+def create_new_spreadsheet_with_data(formatted_data: Dict[str, List[List[str]]], title: str = "Agent Output") -> str:
+    service = get_google_service(
+        'sheets',
+        'v4',
+        ['https://www.googleapis.com/auth/spreadsheets']
+    )
+    # Create the new spreadsheet
+    spreadsheet = {
+        'properties': {
+            'title': title
+        }
+    }
+    spreadsheet = service.spreadsheets().create(body=spreadsheet, fields='spreadsheetId').execute()
+    new_spreadsheet_id = spreadsheet.get('spreadsheetId')
+    # Prepare the data: headers + rows
+    values = [formatted_data["headers"]] + formatted_data["rows"]
+    # Write the data to the new spreadsheet
+    service.spreadsheets().values().update(
+        spreadsheetId=new_spreadsheet_id,
+        range="A1",
+        valueInputOption="RAW",
+        body={"values": values}
+    ).execute()
+    return new_spreadsheet_id
+
 def verify_file_access(file_id: str, folder_id: Optional[str] = None) -> bool:
     """Verify that the service account has access to the file."""
     try:
@@ -153,7 +178,9 @@ async def format_sheet(request: FormatRequest, background_tasks: BackgroundTasks
             'status': 'processing',
             'message': 'Starting sheet formatting',
             'timestamp': datetime.now(),
-            'data': None
+            'data': None,
+            'new_sheet_id': None,
+            'new_sheet_url': None
         }
         
         # Define background task
@@ -164,12 +191,16 @@ async def format_sheet(request: FormatRequest, background_tasks: BackgroundTasks
                 
                 # Format the data
                 formatted_data = format_sheet_data(sheet_data, request.metadata.dict())
+                new_sheet_id = create_new_spreadsheet_with_data(formatted_data, title="Agent Output")
+                new_sheet_url = f"https://docs.google.com/spreadsheets/d/{new_sheet_id}/edit"
                 
                 # Update result
                 formatted_results[request_id].update({
                     'status': 'completed',
                     'message': 'Sheet formatting completed successfully',
-                    'data': formatted_data
+                    'data': formatted_data,
+                    'new_sheet_id': new_sheet_id,
+                    'new_sheet_url': new_sheet_url
                 })
                 
             except Exception as e:
@@ -218,11 +249,16 @@ async def get_format_status(request_id: str):
     
     # If processing is complete, return the formatted data
     if result['status'] == 'completed':
-        return {
+        response = {
             'status': result['status'],
             'message': result['message'],
             'data': result['data']
         }
+        if result.get('new_sheet_id'):
+            response['new_sheet_id'] = result['new_sheet_id']
+        if result.get('new_sheet_url'):
+            response['new_sheet_url'] = result['new_sheet_url']
+        return response
     
     # Otherwise, just return the status
     return {
